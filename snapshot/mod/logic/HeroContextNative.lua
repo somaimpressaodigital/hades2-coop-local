@@ -1,0 +1,25 @@
+--
+-- Copyright (c) Uladzislau Nikalayevich <thenormalnij@gmail.com>. All rights reserved.
+-- Licensed under the MIT license. See LICENSE file in the project root for details.
+--
+
+---@type CoopPlayers
+local CoopPlayers = ModRequire "../logic/CoopPlayers.lua"
+
+---@class HeroContextNative
+local HeroContextNative = {}
+
+function HeroContextNative.RunWithNativeHeroContextFromHero(fun, ...)
+    local playerIndex = CoopPlayers.GetPlayerByHero(CurrentRun.Hero) or 1
+    return HeroContextNative.RunWithNativeHeroContext(playerIndex, fun, ...)
+end
+
+function HeroContextNative.RunWithNativeHeroContext(playerIndex, fun, ...)
+    CoopSetCurrentMainPlayer(playerIndex)
+    local result = table.pack(pcall(fun, ...))
+    CoopResetCurrentMainPlayer()
+    if not result[1] then error(result[2]) end
+    return table.unpack(result, 2, result.n)
+end
+
+return HeroContextNative

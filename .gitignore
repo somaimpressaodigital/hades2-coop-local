@@ -1,0 +1,24 @@
+# No game data, local state, credentials or generated binaries
+*.dll
+*.exe
+*.pdb
+*.obj
+*.lib
+*.exp
+*.sav
+*.log
+*.flag
+*.pkg
+*.pkg_manifest
+*.gr2
+*.fbx
+*.glb
+*.zip
+.env
+.env.*
+env.cmake
+Profile*
+build/
+out/
+.vs/
+__pycache__/

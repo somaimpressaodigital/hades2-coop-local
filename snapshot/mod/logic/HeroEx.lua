@@ -1,0 +1,150 @@
+--
+-- Copyright (c) Uladzislau Nikalayevich <thenormalnij@gmail.com>. All rights reserved.
+-- Licensed under the MIT license. See LICENSE file in the project root for details.
+--
+
+---@type HeroContext
+local HeroContext = ModRequire "HeroContext.lua"
+---@type HookUtils
+local HookUtils = ModRequire "../utils/HookUtils.lua"
+local GameStateEx=ModRequire "GameStateEx.lua"
+local PersonalRerolls=ModRequire "LocalDuoPersonalRerolls.lua"
+
+---@class HeroEx
+local HeroEx = {}
+
+function HeroEx.SaveUnhookedFunctions()
+    HeroEx.SetupHeroObject = SetupHeroObject
+    HeroEx.NativeToggleControl = ToggleControl
+    HeroEx.NativeToggleMove = ToggleMove
+end
+
+---@param hero table
+---@return string
+function HeroEx.GetGift(hero)
+    local currentGift
+    for _, trait in pairs(hero.Traits) do
+        if not trait.InheritFrom then
+            goto continue
+        end
+
+        if trait.InheritFrom[1] == "GiftTrait" then
+            currentGift = trait.Name
+        end
+
+        ::continue::
+    end
+
+    return currentGift
+end
+
+---@param hero table
+---@return string?
+function HeroEx.GetMainWeapon(hero)
+    for _, name in pairs(WeaponSets.HeroPrimaryWeapons) do
+        if hero.Weapons[name] then
+            return name
+        end
+    end
+end
+
+---@param hero table
+---@return string?
+---@return number?
+function HeroEx.GetHeroWeaponFull(hero)
+    local weaponName = HeroEx.GetMainWeapon(hero)
+
+    if not weaponName then
+        DebugPrint { Text = "The player has no weapon!!!!" }
+        return
+    end
+
+    -- See #46
+    -- Player 2 doesn't have a trait if weapon aspects aren't unlocked
+    -- Use the first weapon aspect by default
+    local weaponIndex = GetWeaponUpgradeLevel(WeaponData[weaponName].DummyTraitName)
+
+    DebugPrint{ Text = "Hero has weapon level " .. tostring(weaponIndex) }
+
+    return weaponName, weaponIndex
+end
+
+
+---@class ICreateFreshHeroArgs
+---@field keepsake string?
+---@field familiar string?
+---@field weaponName string
+---@field weaponVariant number
+
+---@param args ICreateFreshHeroArgs
+function HeroEx.CreateFreshHero(args)
+    local hero = CreateNewHero(nil, { WeaponName = args.weaponName })
+
+    -- The game does that in DoPatches
+    hero.MaxLastStands = 0
+
+    if args.weaponName then
+        local secondaryWeapon = WeaponData[args.weaponName].SecondaryWeapon
+        if secondaryWeapon then
+            hero.Weapons[secondaryWeapon] = true
+        end
+    end
+
+    HeroContext.RunWithHeroContext(hero, function()
+        local player=args.playerId or 1
+        -- Both current owners use the existing H2 personal Arcana context.
+        PersonalRerolls.WithCreating(args.playerId,hero,GameStateEx.WithPersonalArcana,player,EquipPreRunMetaUpgrades,nil,hero)
+
+        if args.familiar then
+            local prevFamiliar = GameState.EquippedFamiliar
+            EquipFamiliar(nil, { Unit = CurrentRun.Hero, FamiliarName = args.familiar })
+            GameState.EquippedFamiliar = prevFamiliar
+        end
+
+        if args.keepsake then
+            EquipKeepsake(hero, args.keepsake, { SkipNewTraitHighlight = true })
+        end
+
+        EquipWeaponUpgrade(hero, { SkipTraitHighlight = true })
+        InitHeroLastStands(hero)
+    end)
+
+    return hero
+end
+
+---@param hero table
+---@param position number?
+function HeroEx.ShowHero(hero, position)
+    SetTargetable { Id = hero.ObjectId }
+    SetColor { Id = hero.ObjectId, Color = { 255, 255, 255, 255 } }
+    local personalRecolor = ModRequire "PersonalRecolorV2.lua"
+    personalRecolor.ApplyPersonal(hero)
+    if position ~= nil then
+        Teleport { Id = hero.ObjectId, DestinationId = position }
+    end
+end
+
+---@param hero table
+function HeroEx.HideHero(hero)
+    SetUntargetable { Id = hero.ObjectId }
+    local weaponsToHide = { "RangedWeapon" }
+    -- for _, weaponName in ipairs(WeaponSets.HeroMeleeWeapons) do
+    --     if hero.Weapons[weaponName] then
+    --         table.insert(weaponsToHide, weaponName)
+    --     end
+    -- end
+
+    UnequipWeapon { DestinationId = hero.ObjectId, Names = weaponsToHide, UnloadPackages = false }
+    SetColor { Id = hero.ObjectId, Color = { 255, 255, 255, 0 } }
+    Teleport { Id = hero.ObjectId, DestinationId = hero.ObjectId, OffsetX = -10000 }
+end
+
+function HeroEx.SetupAdditional(currentRoom, applyLuaUpgrades, hero, ObjectId)
+    HookUtils.wrapOnce("GetIdsByType", function()
+        return { ObjectId }
+    end)
+    hero.ObjectId = nil
+    HeroContext.RunWithHeroContext(hero, HeroEx.SetupHeroObject, currentRoom, applyLuaUpgrades)
+end
+
+return HeroEx
